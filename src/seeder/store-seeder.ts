@@ -80,17 +80,20 @@ export const seedStores = async (
       : optionsOrProgress || {};
 
   const maxStores = options.maxStores ?? 5;
-  const targetUsers = users.slice(0, Math.min(users.length, maxStores));
+  const storeJobs = Array.from({ length: maxStores }, (_, i) => ({
+    ownerUser: users[i % users.length]!,
+    storeIndex: i,
+  }));
 
-  return runConcurrentPool<SeedUserResult, SeedStoreResult>(
-    targetUsers,
-    async (user, index) => {
-      const storeData = generateStoreData(index);
-      const res = await createStore(storeData, user.response.access_token);
+  return runConcurrentPool<{ ownerUser: SeedUserResult; storeIndex: number }, SeedStoreResult>(
+    storeJobs,
+    async (job) => {
+      const storeData = generateStoreData(job.storeIndex);
+      const res = await createStore(storeData, job.ownerUser.response.access_token);
       return {
         store: res.data,
         storeData,
-        ownerAccessToken: user.response.access_token,
+        ownerAccessToken: job.ownerUser.response.access_token,
       };
     },
     {

@@ -63,11 +63,6 @@ ${pc.bold("Environment Variables:")}
     }
   }
 
-  // Adjust stores if more stores than users
-  if (storesCount > usersCount) {
-    storesCount = usersCount;
-  }
-
   return {
     usersCount,
     storesCount,
