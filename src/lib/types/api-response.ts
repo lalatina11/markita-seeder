@@ -47,11 +47,9 @@ export interface CreateProductResponse {
     address: string;
     city: string;
   };
-  media: [
-    {
-      id: string;
-      media_type: "image" | "video";
-      media_url: string;
-    },
-  ];
+  media: Array<{
+    id: string;
+    media_type: "image" | "video";
+    media_url: string;
+  }>;
 }

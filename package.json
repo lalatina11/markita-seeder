@@ -4,6 +4,7 @@
   "type": "module",
   "private": true,
   "scripts": {
+    "seed": "bun run src/index.ts",
     "dev": "bun --watch src"
   },
   "devDependencies": {
@@ -14,6 +15,7 @@
   },
   "dependencies": {
     "@faker-js/faker": "^10.6.0",
+    "picocolors": "^1.1.1",
     "zod": "^4.6.5"
   }
 }
