@@ -271,7 +271,20 @@ async function main() {
   console.log(`  • ${pc.bold("Duration:")}    ${pc.yellow(`${elapsedSec}s`)} (${throughput} ops/sec)`);
 
   if (totalErrors > 0) {
-    console.log(pc.yellow(`\n⚠️  Encountered ${totalErrors} non-fatal error(s) during seeding.`));
+    console.log(pc.yellow(`\n⚠️  Encountered ${totalErrors} failure(s) during seeding.`));
+    const allErrors = [
+      ...results.userErrors.map((e) => `[User] ${e.error.message}`),
+      ...results.storeErrors.map((e) => `[Store] ${e.error.message}`),
+      ...results.productErrors.map((e) => `[Product] ${e.error.message}`),
+    ];
+    const grouped = new Map<string, number>();
+    for (const msg of allErrors) {
+      grouped.set(msg, (grouped.get(msg) || 0) + 1);
+    }
+    console.log(pc.red("\nError breakdown:"));
+    for (const [msg, count] of grouped.entries()) {
+      console.log(pc.red(`  • [${count}x] ${msg}`));
+    }
   }
 
   if (results.users.length > 0) {

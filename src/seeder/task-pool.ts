@@ -37,11 +37,13 @@ export async function executeWithRetry<T>(
 
       const errorMessage = err instanceof Error ? err.message : String(err);
 
-      // Don't retry if it's an unrecoverable client validation error (400, 422) unless it's a rate limit (429)
+      // Don't retry unrecoverable client errors (400, 401, 403, 404, 422) unless it's a rate limit (429)
       const isClientError =
         (errorMessage.includes("(400)") ||
-          errorMessage.includes("(422)") ||
-          errorMessage.includes("(401)")) &&
+          errorMessage.includes("(401)") ||
+          errorMessage.includes("(403)") ||
+          errorMessage.includes("(404)") ||
+          errorMessage.includes("(422)")) &&
         !errorMessage.includes("429");
 
       if (isClientError) {
@@ -106,6 +108,7 @@ export async function runConcurrentPool<TItem, TResult>(
   let nextIndex = 0;
   let completed = 0;
   let activeWorkers = 0;
+  let consecutiveConnectionErrors = 0;
 
   return new Promise<PoolResult<TResult>>((resolve) => {
     let isAborted = false;
@@ -144,9 +147,21 @@ export async function runConcurrentPool<TItem, TResult>(
             { maxRetries },
           );
           results.push(latestResult);
+          consecutiveConnectionErrors = 0;
         } catch (err: unknown) {
           latestError = err instanceof Error ? err : new Error(String(err));
           errors.push({ index: currentIndex, error: latestError });
+
+          if (
+            latestError.message.includes("Unable to connect") ||
+            latestError.message.includes("ECONNREFUSED") ||
+            latestError.message.includes("Failed to connect")
+          ) {
+            consecutiveConnectionErrors++;
+            if (consecutiveConnectionErrors >= 3) {
+              isAborted = true; // Server is down, stop hammering dead port
+            }
+          }
         } finally {
           activeWorkers--;
           completed++;
