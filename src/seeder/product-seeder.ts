@@ -8,6 +8,12 @@ import {
 } from "../lib/validation/product";
 import { generateProductData } from "./mock-data";
 import type { SeedStoreResult } from "./store-seeder";
+import {
+  runConcurrentPool,
+  type PoolOptions,
+  type PoolProgress,
+  type PoolResult,
+} from "./task-pool";
 
 export { generateProductData };
 
@@ -46,36 +52,94 @@ export interface SeedProductResult {
   productData: CreateProductSchemaType;
 }
 
+interface ProductJob {
+  storeId: string;
+  ownerAccessToken: string;
+  templateIndex: number;
+}
+
+export interface SeedProductsOptions
+  extends Omit<PoolOptions<ProductJob, SeedProductResult>, "onProgress"> {
+  productsPerStore?: number;
+  totalProducts?: number;
+  onProgress?: (progress: PoolProgress<SeedProductResult>) => void;
+}
+
 /**
- * Seeds products across all provided stores
+ * Seeds products concurrently with connection pooling, retries, and pacing.
  */
 export const seedProducts = async (
   stores: SeedStoreResult[],
-  productsPerStore = 4,
-  onProgress?: (index: number, total: number, result: SeedProductResult) => void,
-): Promise<SeedProductResult[]> => {
-  const products: SeedProductResult[] = [];
-  const totalProducts = stores.length * productsPerStore;
-  let globalIndex = 0;
+  optionsOrPerStore?:
+    | SeedProductsOptions
+    | number,
+  onProgressLegacy?: (index: number, total: number, result: SeedProductResult) => void,
+): Promise<PoolResult<SeedProductResult>> => {
+  if (stores.length === 0) {
+    return { results: [], errors: [], successCount: 0, failureCount: 0 };
+  }
 
-  for (let storeIdx = 0; storeIdx < stores.length; storeIdx++) {
-    const storeResult = stores[storeIdx]!;
+  let options: SeedProductsOptions = {};
 
-    for (let p = 0; p < productsPerStore; p++) {
-      const templateIndex = storeIdx * productsPerStore + p;
-      const productData = generateProductData(storeResult.store.id, templateIndex);
-      const res = await createProduct(productData, storeResult.ownerAccessToken);
+  if (typeof optionsOrPerStore === "number") {
+    options = {
+      productsPerStore: optionsOrPerStore,
+      onProgress: (p) => {
+        if (p.latestResult) {
+          onProgressLegacy?.(p.completed, p.total, p.latestResult);
+        }
+      },
+    };
+  } else if (optionsOrPerStore) {
+    options = optionsOrPerStore;
+  }
 
-      const result: SeedProductResult = {
-        product: res.data,
-        productData,
-      };
+  // Build the list of jobs distributed across stores
+  const jobs: ProductJob[] = [];
 
-      products.push(result);
-      globalIndex++;
-      onProgress?.(globalIndex, totalProducts, result);
+  if (options.totalProducts !== undefined && options.totalProducts > 0) {
+    // Distribute totalProducts across all stores evenly
+    const total = options.totalProducts;
+    for (let i = 0; i < total; i++) {
+      const store = stores[i % stores.length]!;
+      jobs.push({
+        storeId: store.store.id,
+        ownerAccessToken: store.ownerAccessToken,
+        templateIndex: i,
+      });
+    }
+  } else {
+    // Use productsPerStore (default 4)
+    const perStore = options.productsPerStore ?? 4;
+    let globalIdx = 0;
+    for (let s = 0; s < stores.length; s++) {
+      const store = stores[s]!;
+      for (let p = 0; p < perStore; p++) {
+        jobs.push({
+          storeId: store.store.id,
+          ownerAccessToken: store.ownerAccessToken,
+          templateIndex: globalIdx++,
+        });
+      }
     }
   }
 
-  return products;
+  return runConcurrentPool<ProductJob, SeedProductResult>(
+    jobs,
+    async (job) => {
+      const productData = generateProductData(job.storeId, job.templateIndex);
+      const res = await createProduct(productData, job.ownerAccessToken);
+      return {
+        product: res.data,
+        productData,
+      };
+    },
+    {
+      concurrency: options.concurrency ?? 4,
+      pacingDelayMs: options.pacingDelayMs ?? 15,
+      maxRetries: options.maxRetries ?? 3,
+      abortSignal: options.abortSignal,
+      onProgress: options.onProgress,
+    },
+  );
 };

@@ -1,6 +1,12 @@
 import type { ApiResponse, RegisterResponse } from "../lib/types/api-response";
 import { registerSchema, type RegisterSchemaType } from "../lib/validation/user";
 import { generateUserData } from "./mock-data";
+import {
+  runConcurrentPool,
+  type PoolOptions,
+  type PoolProgress,
+  type PoolResult,
+} from "./task-pool";
 
 export { generateUserData };
 
@@ -37,25 +43,49 @@ export interface SeedUserResult {
   userData: RegisterSchemaType;
 }
 
+export interface SeedUsersOptions
+  extends Omit<PoolOptions<number, SeedUserResult>, "onProgress"> {
+  onProgress?: (progress: PoolProgress<SeedUserResult>) => void;
+}
+
 /**
- * Seeds multiple users sequentially
+ * Seeds multiple users concurrently with connection pooling, retries, and pacing.
  */
 export const seedUsers = async (
   count = 5,
-  onProgress?: (index: number, total: number, result: SeedUserResult) => void,
-): Promise<SeedUserResult[]> => {
-  const users: SeedUserResult[] = [];
+  optionsOrProgress?:
+    | SeedUsersOptions
+    | ((index: number, total: number, result: SeedUserResult) => void),
+): Promise<PoolResult<SeedUserResult>> => {
+  const options: SeedUsersOptions =
+    typeof optionsOrProgress === "function"
+      ? {
+          onProgress: (p) => {
+            if (p.latestResult) {
+              optionsOrProgress(p.completed, p.total, p.latestResult);
+            }
+          },
+        }
+      : optionsOrProgress || {};
 
-  for (let i = 0; i < count; i++) {
-    const userData = generateUserData();
-    const res = await createUser(userData);
-    const result: SeedUserResult = {
-      response: res.data,
-      userData,
-    };
-    users.push(result);
-    onProgress?.(i + 1, count, result);
-  }
+  const indices = Array.from({ length: count }, (_, i) => i);
 
-  return users;
+  return runConcurrentPool<number, SeedUserResult>(
+    indices,
+    async (index) => {
+      const userData = generateUserData(index);
+      const res = await createUser(userData);
+      return {
+        response: res.data,
+        userData,
+      };
+    },
+    {
+      concurrency: options.concurrency ?? 3,
+      pacingDelayMs: options.pacingDelayMs ?? 20,
+      maxRetries: options.maxRetries ?? 3,
+      abortSignal: options.abortSignal,
+      onProgress: options.onProgress,
+    },
+  );
 };

@@ -15,7 +15,7 @@ bun install
 
 ## Running the Seeder
 
-To run the complete seeding process with defaults (5 users, 5 stores, 4 products per store):
+To run the seeding process with defaults (5 users, 5 stores, 20 products):
 
 ```bash
 bun run seed
@@ -23,14 +23,31 @@ bun run seed
 bun run src/index.ts
 ```
 
-### Custom Options
+### High-Volume / Large-Scale Seeding
 
-You can customize the number of entities using CLI flags:
+The seeder includes built-in database protection features:
+- **Connection pooling & concurrency control**: Prevents exhausting database connection limits.
+- **Exponential backoff with jitter**: Retries transient server errors and locks up to 3 times.
+- **Pacing delay**: Smooths out write spikes.
+- **Fault tolerance**: Continues gracefully if individual items fail.
 
 ```bash
-# Seed 10 users, 8 stores, and 5 products per store
-bun run seed --users=10 --stores=8 --products=5
+# Seed 100 users, 50 stores, and 500 products distributed across stores
+bun run seed --users=100 --stores=50 --products=500
 ```
+
+### CLI Options
+
+| Option | Description | Default |
+|---|---|---|
+| `--users=<num>` | Total users to create | `5` |
+| `--stores=<num>` | Total stores to create | `5` |
+| `--products=<num>` | Total products to distribute across stores | `20` |
+| `--products-per-store=<num>` | Explicit products per store (overrides `--products`) | - |
+| `--concurrency=<num>` | Max concurrent HTTP requests | `4` |
+| `--delay=<ms>` | Pacing delay between requests in milliseconds | `15` |
+| `--retries=<num>` | Max retry attempts per request on failure | `3` |
+| `--help, -h` | Show help message | - |
 
 ### Environment Variables
 

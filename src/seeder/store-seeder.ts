@@ -8,6 +8,12 @@ import {
 } from "../lib/validation/store";
 import { generateStoreData } from "./mock-data";
 import type { SeedUserResult } from "./user-seeder";
+import {
+  runConcurrentPool,
+  type PoolOptions,
+  type PoolProgress,
+  type PoolResult,
+} from "./task-pool";
 
 export { generateStoreData };
 
@@ -47,30 +53,52 @@ export interface SeedStoreResult {
   ownerAccessToken: string;
 }
 
+export interface SeedStoresOptions
+  extends Omit<PoolOptions<SeedUserResult, SeedStoreResult>, "onProgress"> {
+  maxStores?: number;
+  onProgress?: (progress: PoolProgress<SeedStoreResult>) => void;
+}
+
 /**
- * Seeds stores for a list of users
+ * Seeds stores concurrently with connection pooling, retries, and pacing.
  */
 export const seedStores = async (
   users: SeedUserResult[],
-  maxStores = 5,
-  onProgress?: (index: number, total: number, result: SeedStoreResult) => void,
-): Promise<SeedStoreResult[]> => {
-  const stores: SeedStoreResult[] = [];
-  const targetCount = Math.min(users.length, maxStores);
+  optionsOrProgress?:
+    | SeedStoresOptions
+    | ((index: number, total: number, result: SeedStoreResult) => void),
+): Promise<PoolResult<SeedStoreResult>> => {
+  const options: SeedStoresOptions =
+    typeof optionsOrProgress === "function"
+      ? {
+          onProgress: (p) => {
+            if (p.latestResult) {
+              optionsOrProgress(p.completed, p.total, p.latestResult);
+            }
+          },
+        }
+      : optionsOrProgress || {};
 
-  for (let i = 0; i < targetCount; i++) {
-    const user = users[i]!;
-    const storeData = generateStoreData(i);
-    const res = await createStore(storeData, user.response.access_token);
+  const maxStores = options.maxStores ?? 5;
+  const targetUsers = users.slice(0, Math.min(users.length, maxStores));
 
-    const result: SeedStoreResult = {
-      store: res.data,
-      storeData,
-      ownerAccessToken: user.response.access_token,
-    };
-    stores.push(result);
-    onProgress?.(i + 1, targetCount, result);
-  }
-
-  return stores;
+  return runConcurrentPool<SeedUserResult, SeedStoreResult>(
+    targetUsers,
+    async (user, index) => {
+      const storeData = generateStoreData(index);
+      const res = await createStore(storeData, user.response.access_token);
+      return {
+        store: res.data,
+        storeData,
+        ownerAccessToken: user.response.access_token,
+      };
+    },
+    {
+      concurrency: options.concurrency ?? 3,
+      pacingDelayMs: options.pacingDelayMs ?? 20,
+      maxRetries: options.maxRetries ?? 3,
+      abortSignal: options.abortSignal,
+      onProgress: options.onProgress,
+    },
+  );
 };

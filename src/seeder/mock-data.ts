@@ -515,12 +515,14 @@ const STORE_SUFFIXES = [
  * Generate unique, valid user registration payload
  */
 export function generateUserData(
+  index?: number,
   custom?: Partial<RegisterSchemaType>,
 ): RegisterSchemaType {
   const firstName = fakerID_ID.person.firstName();
   const lastName = fakerID_ID.person.lastName();
   const displayName = `${firstName} ${lastName}`.trim();
-  const uniqueSuffix = `${Date.now()}_${faker.number.int({ min: 100, max: 999 })}`;
+  const uniqueId = faker.string.alphanumeric(6).toLowerCase();
+  const uniqueSuffix = `${Date.now()}_${index ?? 0}_${uniqueId}`;
   const cleanUser = `${firstName.toLowerCase()}.${lastName.toLowerCase()}`.replace(
     /[^a-z0-9]/g,
     "",
@@ -532,7 +534,9 @@ export function generateUserData(
     email: custom?.email ?? email,
     password: custom?.password ?? password,
     data: {
-      display_name: custom?.data?.display_name ?? (displayName.length >= 3 ? displayName : "User Pengguna"),
+      display_name:
+        custom?.data?.display_name ??
+        (displayName.length >= 3 ? displayName : `Pengguna ${index ?? 1}`),
     },
   };
 }
@@ -544,8 +548,8 @@ export function generateStoreData(
   index?: number,
   custom?: Partial<CreateStoreSchemaType>,
 ): CreateStoreSchemaType {
-  // Use presets if index is within range, otherwise generate procedurally
-  if (index !== undefined && STORE_PRESETS[index]) {
+  // Use presets if index is within range
+  if (index !== undefined && index < STORE_PRESETS.length && STORE_PRESETS[index]) {
     const preset = STORE_PRESETS[index]!;
     return {
       name: custom?.name ?? preset.name,
@@ -558,7 +562,8 @@ export function generateStoreData(
 
   const prefix = faker.helpers.arrayElement(STORE_PREFIXES);
   const suffix = faker.helpers.arrayElement(STORE_SUFFIXES);
-  const storeName = `${prefix} ${suffix} ${faker.number.int({ min: 1, max: 99 })}`;
+  const storeNum = index !== undefined ? index + 1 : faker.number.int({ min: 1, max: 999 });
+  const storeName = `${prefix} ${suffix} No. ${storeNum}`;
   const city = faker.helpers.arrayElement(INDONESIAN_CITIES);
   const street = fakerID_ID.location.streetAddress();
 
@@ -580,10 +585,10 @@ export function generateStoreData(
   ])}?w=1200&auto=format&fit=crop&q=80`;
 
   return {
-    name: custom?.name ?? (storeName.length >= 5 ? storeName : `Toko Markita ${Date.now()}`),
+    name: custom?.name ?? (storeName.length >= 5 ? storeName : `Toko Markita Resmi ${storeNum}`),
     avatar: custom?.avatar ?? avatar,
     banner: custom?.banner ?? banner,
-    address: custom?.address ?? `Jl. ${street} No. ${faker.number.int({ min: 1, max: 150 })}`,
+    address: custom?.address ?? `Jl. ${street} No. ${faker.number.int({ min: 1, max: 200 })}`,
     city: custom?.city ?? city,
   };
 }
@@ -596,31 +601,28 @@ export function generateProductData(
   index?: number,
   custom?: Partial<CreateProductSchemaType>,
 ): CreateProductSchemaType {
-  if (index !== undefined && PRODUCT_TEMPLATES[index % PRODUCT_TEMPLATES.length]) {
-    const template = PRODUCT_TEMPLATES[index % PRODUCT_TEMPLATES.length]!;
-    return {
-      store_id: storeId,
-      name: custom?.name ?? template.name,
-      description: custom?.description ?? template.description,
-      price: custom?.price ?? template.price,
-      media: custom?.media ?? template.media,
-    };
-  }
+  const templateIdx = index !== undefined ? index % PRODUCT_TEMPLATES.length : 0;
+  const template = PRODUCT_TEMPLATES[templateIdx] || PRODUCT_TEMPLATES[0]!;
 
-  // Procedural generation if no template or random pick
-  const randomTemplate = faker.helpers.arrayElement(PRODUCT_TEMPLATES);
-  const variant = faker.helpers.arrayElement([
-    "Edisi Spesial",
-    "Model Terbaru",
-    "Original Garansi Resmi",
-    "Premium Quality",
-  ]);
+  let productName = template.name;
+  if (index !== undefined && index >= PRODUCT_TEMPLATES.length) {
+    const cycle = Math.floor(index / PRODUCT_TEMPLATES.length) + 1;
+    const variantTag = faker.helpers.arrayElement([
+      "Varian Premium",
+      "Seri Pro",
+      "Edisi Khusus",
+      "Model Terbaru",
+      "Paket Hemat",
+      "Tipe Plus",
+    ]);
+    productName = `${template.name} - ${variantTag} #${cycle}`;
+  }
 
   return {
     store_id: storeId,
-    name: custom?.name ?? `${randomTemplate.name} (${variant})`,
-    description: custom?.description ?? randomTemplate.description,
-    price: custom?.price ?? randomTemplate.price,
-    media: custom?.media ?? randomTemplate.media,
+    name: custom?.name ?? productName,
+    description: custom?.description ?? template.description,
+    price: custom?.price ?? template.price,
+    media: custom?.media ?? template.media,
   };
 }
