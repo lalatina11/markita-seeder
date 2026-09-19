@@ -1,0 +1,19 @@
+{
+  "name": "seeder",
+  "module": "src/index.ts",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "bun --watch src"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^7"
+  },
+  "dependencies": {
+    "@faker-js/faker": "^10.6.0",
+    "zod": "^4.6.5"
+  }
+}
